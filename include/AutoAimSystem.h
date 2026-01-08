@@ -1,5 +1,6 @@
 #pragma once
 #include "LightBarDetector.h"
+#include "ArmorMatcher.h"
 
 /**
  * @brief 自动瞄准系统总控类
@@ -15,4 +16,5 @@ public:
 
 private:
     LightBarDetector detector; // 灯条检测器实例
+    ArmorMatcher matcher; // 装甲板匹配器实例
 };

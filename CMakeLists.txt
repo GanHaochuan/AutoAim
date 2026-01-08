@@ -13,6 +13,7 @@ include_directories(
 add_library(core
     src/LightBarDetector.cpp
     src/AutoAimSystem.cpp
+    src/ArmorMatcher.cpp
 )
 
 target_link_libraries(core ${OpenCV_LIBS})

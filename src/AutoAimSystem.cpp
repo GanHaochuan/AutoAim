@@ -31,8 +31,9 @@ void AutoAimSystem::run(const std::string& videoPath) {
         cap >> frame;
         if (frame.empty()) break;
 
-        // 3rd: 检测灯条
+        // 3rd: 检测灯条并匹配装甲板
         auto lights = detector.detect(frame); // 返回所有检测到的灯条矩形列表
+        auto armors = matcher.match(lights); // 返回所有匹配到的装甲板列表
 
         // 4th: 绘制检测结果
         for (auto& rect : lights) {
@@ -42,6 +43,14 @@ void AutoAimSystem::run(const std::string& videoPath) {
             for (int i = 0; i < 4; i++) {
                 cv::line(frame, pts[i], pts[(i + 1) % 4], cv::Scalar(0, 255, 0), 2); // 绿色线条、宽度2
             }
+        }
+
+        // 画装甲板（红）
+        for (auto& armor : armors) {
+            cv::Point2f pts[4];
+            armor.rect.points(pts);
+            for (int i = 0; i < 4; i++)
+                cv::line(frame, pts[i], pts[(i + 1) % 4], cv::Scalar(0, 0, 255), 2);
         }
 
         // 5th: 显示结果
