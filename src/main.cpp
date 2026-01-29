@@ -2,6 +2,6 @@
 
 int main() {
     AutoAimSystem system;
-    system.run("D:\\AutoAim\\data\\test01.avi");
+    system.run("D:\\AutoAim\\data\\test02.mp4");
     return 0;
 }

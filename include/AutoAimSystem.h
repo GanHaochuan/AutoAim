@@ -1,20 +1,28 @@
 #pragma once
 #include "LightBarDetector.h"
 #include "ArmorMatcher.h"
+#include "NumberRecognizer.h"
 
 /**
  * @brief 自动瞄准系统总控类
- * 
- * 负责整合灯条检测功能，实现完整的自动瞄准系统流程。
- * 包含视频流处理、目标检测结果可视化等功能。
  */
 class AutoAimSystem {
 public:
-    AutoAimSystem(); // 默认构造函数
+    AutoAimSystem(); 
 
-    void run(const std::string& videoPath); // 运行自动瞄准系统，处理视频流
+    void run(const std::string& videoPath); 
 
 private:
-    LightBarDetector detector; // 灯条检测器实例
-    ArmorMatcher matcher; // 装甲板匹配器实例
+    LightBarDetector detector;
+    ArmorMatcher matcher;
+    NumberRecognizer recognizer;
+
+    // 相机参数（PnP 用）
+    cv::Mat cameraMatrix;
+    cv::Mat distCoeffs;
+
+    // 核心改进：初始化相机参数
+    void initCameraParams();
+    // 核心改进：PnP 测距
+    void solvePnP(Armor& armor);
 };

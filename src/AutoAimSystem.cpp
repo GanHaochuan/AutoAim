@@ -1,62 +1,122 @@
 #include "AutoAimSystem.h"
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <string>
+#include <algorithm> // 必须包含，用于 std::sort
 
 AutoAimSystem::AutoAimSystem() {
-    detector.setEnemyColor(1); // 0-blue, 1-red
+    detector.setEnemyColor(1); // 1-RED, 0-BLUE
+
+    // ---------------------------------------------------------
+    // 核心修改：加载 ONNX 模型
+    // 请确保 D:/AutoAim/models/armor_model.onnx 文件存在！
+    // ---------------------------------------------------------
+    std::string modelPath = "D:/AutoAim/models/armor_model.onnx";
+    if (!recognizer.init(modelPath)) {
+        std::cerr << "严重错误: 无法加载模型文件: " << modelPath << std::endl;
+        // 可以选择在这里 exit(-1) 或者继续运行
+    } else {
+        std::cout << "模型加载成功!" << std::endl;
+    }
+
+    initCameraParams(); 
 }
 
-/**
- * @brief 自动瞄准系统主运行函数
- * 
- * @param[in] videoPath 视频文件路径
- * 
- * @note 支持常见的视频格式（如.mp4）
- *       窗口名称为"AutoAim - LightBars"
- *       按ESC键可退出程序
- */
-void AutoAimSystem::run(const std::string& videoPath) {
-    // 1st： 打开视频文件
-    cv::VideoCapture cap(videoPath);
+void AutoAimSystem::initCameraParams() {
+    // 假设是 1280x720 的视频，估算内参
+    double fx = 1000.0, fy = 1000.0;
+    double cx = 640.0, cy = 360.0;
+    cameraMatrix = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    distCoeffs = cv::Mat::zeros(5, 1, CV_64F); 
+}
 
+void AutoAimSystem::solvePnP(Armor& armor) {
+    // 定义装甲板的世界坐标 (单位：mm)
+    float halfX = (armor.type == ArmorType::SMALL) ? 135.0f / 2.0f : 230.0f / 2.0f;
+    float halfY = 55.0f / 2.0f;
+
+    std::vector<cv::Point3f> objPoints;
+    // 世界坐标系顺序：TL, TR, BR, BL
+    objPoints.push_back(cv::Point3f(-halfX, -halfY, 0)); // TL
+    objPoints.push_back(cv::Point3f(halfX, -halfY, 0));  // TR
+    objPoints.push_back(cv::Point3f(halfX, halfY, 0));   // BR
+    objPoints.push_back(cv::Point3f(-halfX, halfY, 0));  // BL
+
+    // 图像点处理
+    std::vector<cv::Point2f> imgPoints;
+    for(int i=0; i<4; i++) imgPoints.push_back(armor.points[i]);
+
+    // 对图像点进行简单的 X 轴排序，然后区分上下
+    // 这一步是为了确保 imgPoints 的顺序也是 TL, TR, BR, BL
+    std::sort(imgPoints.begin(), imgPoints.end(), [](const cv::Point2f& a, const cv::Point2f& b){ 
+        return a.x < b.x; 
+    });
+
+    // 此时 imgPoints[0], imgPoints[1] 是左边的点；imgPoints[2], imgPoints[3] 是右边的点
+    if (imgPoints[0].y > imgPoints[1].y) std::swap(imgPoints[0], imgPoints[1]); // 确保 [0] 是 TL
+    if (imgPoints[2].y > imgPoints[3].y) std::swap(imgPoints[2], imgPoints[3]); // 确保 [2] 是 TR
+    
+    // 现在的顺序是: TL(0), BL(1), TR(2), BR(3) -> 需要调整为 TL, TR, BR, BL
+    // 目标: [0]=TL, [1]=TR, [2]=BR, [3]=BL
+    std::vector<cv::Point2f> sortedPoints(4);
+    sortedPoints[0] = imgPoints[0]; // TL
+    sortedPoints[1] = imgPoints[2]; // TR
+    sortedPoints[2] = imgPoints[3]; // BR
+    sortedPoints[3] = imgPoints[1]; // BL
+
+    cv::Mat rvec, tvec;
+    bool success = cv::solvePnP(objPoints, sortedPoints, cameraMatrix, distCoeffs, rvec, tvec);
+
+    if (success) {
+        armor.distance = (float)tvec.at<double>(2, 0); // Z轴距离
+    }
+}
+
+void AutoAimSystem::run(const std::string& videoPath) {
+    cv::VideoCapture cap(videoPath);
     if (!cap.isOpened()) {
-        std::cerr << "Failed to open video: " << videoPath << std::endl;
+        std::cerr << "Cannot open video: " << videoPath << std::endl;
         return;
     }
 
-    cv::Mat frame; //储存当前帧
-
-    // 2nd: 逐帧处理视频
+    cv::Mat frame;
     while (true) {
         cap >> frame;
         if (frame.empty()) break;
 
-        // 3rd: 检测灯条并匹配装甲板
-        auto lights = detector.detect(frame); // 返回所有检测到的灯条矩形列表
-        auto armors = matcher.match(lights); // 返回所有匹配到的装甲板列表
+        // 1. 检测与匹配
+        std::vector<cv::RotatedRect> lights = detector.detect(frame);
+        std::vector<Armor> armors = matcher.match(lights);
 
-        // 4th: 绘制检测结果
-        for (auto& rect : lights) {
-            cv::Point2f pts[4]; // 储存矩形四个顶点
-            rect.points(pts); // 获取矩形顶点坐标
-            // 绘制矩形
-            for (int i = 0; i < 4; i++) {
-                cv::line(frame, pts[i], pts[(i + 1) % 4], cv::Scalar(0, 255, 0), 2); // 绿色线条、宽度2
-            }
-        }
-
-        // 画装甲板（红）
+        // 2. 识别与绘制
         for (auto& armor : armors) {
-            cv::Point2f pts[4];
-            armor.rect.points(pts);
-            for (int i = 0; i < 4; i++)
-                cv::line(frame, pts[i], pts[(i + 1) % 4], cv::Scalar(0, 0, 255), 2);
+            // 识别数字
+            int number = recognizer.recognize(frame, armor);
+            
+            // PnP 测距
+            solvePnP(armor);
+
+            // 绘制装甲板轮廓
+            for (int i = 0; i < 4; i++) {
+                // 修复：OpenCV line 函数必须使用整数坐标 cv::Point，不能直接用 Point2f
+                cv::line(frame, 
+                         (cv::Point)armor.points[i], 
+                         (cv::Point)armor.points[(i + 1) % 4], 
+                         cv::Scalar(0, 255, 0), 2);
+            }
+
+            // 显示信息
+            std::string text = "Num:" + (number == -1 ? "?" : std::to_string(number));
+            std::string distText = "Dist:" + std::to_string((int)armor.distance) + "mm";
+            
+            // 修复：putText 的坐标也需要强转为 cv::Point
+            cv::putText(frame, text, (cv::Point)armor.rect.center + cv::Point(0, -10), 
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2);
+            cv::putText(frame, distText, (cv::Point)armor.rect.center + cv::Point(0, 15), 
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2);
         }
 
-        // 5th: 显示结果
-        cv::imshow("AutoAim - LightBars", frame);
-
-        // 6th: 处理退出按键
+        cv::imshow("AutoAim System", frame);
         if (cv::waitKey(1) == 27) break;
     }
 }
