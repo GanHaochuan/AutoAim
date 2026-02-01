@@ -70,13 +70,8 @@ std::vector<cv::RotatedRect> LightBarDetector::detect(const cv::Mat& frame) {
         if (ratio < 1.5 || ratio > 12.0) continue;
 
         // 筛选条件3：角度 (灯条大体竖直，容忍左右倾斜)
-        // 注意：OpenCV 高版本 angle 范围可能有变，但经过上面规范化后，
-        // 竖直灯条的 angle 应该接近 0 或 180 (或 +/- 90 视版本而定)。
-        // 简单判断：只要不是横着的(接近90度)就可以
-        // 这里做一个宽松的判断：倾斜角度不应过大
         float angle = std::abs(rect.angle);
         // 如果规范化后角度是0度表示竖直，那么超过45度通常不是灯条
-        // 具体取决于 OpenCV 版本，若发现筛选太严需调整此值
         if (angle > 45 && angle < 135) continue; 
 
         lightBars.push_back(rect);

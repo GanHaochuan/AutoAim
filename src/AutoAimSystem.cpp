@@ -98,22 +98,34 @@ void AutoAimSystem::run(const std::string& videoPath) {
 
             // 绘制装甲板轮廓
             for (int i = 0; i < 4; i++) {
-                // 修复：OpenCV line 函数必须使用整数坐标 cv::Point，不能直接用 Point2f
                 cv::line(frame, 
                          (cv::Point)armor.points[i], 
                          (cv::Point)armor.points[(i + 1) % 4], 
                          cv::Scalar(0, 255, 0), 2);
             }
 
-            // 显示信息
-            std::string text = "Num:" + (number == -1 ? "?" : std::to_string(number));
-            std::string distText = "Dist:" + std::to_string((int)armor.distance) + "mm";
+            // --- 新增/修改：准备显示信息 ---
+            std::string numText = "Num: " + (number == -1 ? "?" : std::to_string(number));
+            std::string distText = "Dist: " + std::to_string((int)armor.distance) + "mm";
             
-            // 修复：putText 的坐标也需要强转为 cv::Point
-            cv::putText(frame, text, (cv::Point)armor.rect.center + cv::Point(0, -10), 
+            // 根据 armor.type 转换为字符串
+            std::string typeStr;
+            if (armor.type == ArmorType::SMALL) typeStr = "Type: SMALL";
+            else if (armor.type == ArmorType::LARGE) typeStr = "Type: LARGE";
+            else typeStr = "Type: UNKNOWN";
+
+            // --- 绘制信息到画面 ---
+            // 1. 显示数字 (上方)
+            cv::putText(frame, numText, (cv::Point)armor.rect.center + cv::Point(0, -25), 
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2);
-            cv::putText(frame, distText, (cv::Point)armor.rect.center + cv::Point(0, 15), 
+            
+            // 2. 显示距离 (中间)
+            cv::putText(frame, distText, (cv::Point)armor.rect.center + cv::Point(0, 0), 
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 255), 2);
+            
+            // 3. 显示类型 (下方)
+            cv::putText(frame, typeStr, (cv::Point)armor.rect.center + cv::Point(0, 25), 
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 100, 0), 2); // 用蓝色/橙色区分
         }
 
         cv::imshow("AutoAim System", frame);
